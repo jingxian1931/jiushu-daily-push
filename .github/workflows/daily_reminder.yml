@@ -1,7 +1,7 @@
-name: 日签推送 · 企业微信主 + Server酱兜底
+name: 日签推送 · 微信双通道（Server酱 + PushPlus）
 
 # GitHub Actions 的 cron 使用 UTC：23:25 UTC = 北京时间次日 07:25
-# 公开仓库若 60 天无提交活动，GitHub 会自动暂停定时任务（私有仓库无此限制）
+# 公开仓库若 60 天无提交活动，GitHub 会自动暂停定时任务 —— 日签每天触发即算活动
 
 on:
   schedule:
@@ -35,8 +35,9 @@ jobs:
 
       - name: 执行日签推送
         env:
-          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           TARGET_DATE: ${{ inputs.date }}
           IMAGE_URL_BASE: ${{ secrets.IMAGE_URL_BASE }}
         run: python scripts/push_daily.py
