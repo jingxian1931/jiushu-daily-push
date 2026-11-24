@@ -1,0 +1,40 @@
+name: 主文提醒 · 二四六 19:28（微信双通道）
+
+# GitHub Actions cron 用 UTC：11:28 UTC = 北京时间 19:28
+# 只在周二/四/六触发（BYDAY=2,4,6 对应周一=1）
+on:
+  schedule:
+    - cron: '28 11 * * 2,4,6'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '测试用日期 MM-DD（留空则取当天）'
+        required: false
+        type: string
+
+concurrency:
+  group: main-article-reminder
+  cancel-in-progress: false
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 拉取仓库
+        uses: actions/checkout@v4
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: pip install --quiet requests
+
+      - name: 执行主文提醒推送
+        env:
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          TARGET_DATE: ${{ inputs.date }}
+        run: python scripts/push_main.py
