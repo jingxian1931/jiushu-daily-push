@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""日签云端推送：企业微信群机器人（主，原生图片可存相册）+ Server酱（兜底，文字）。
+"""日签云端推送：Server酱（主，微信服务号）+ PushPlus（可选）+ 企业微信（可选）。
 
-触发：GitHub Actions 每天 UTC 23:25（北京时间 07:25），或 workflow_dispatch 手动测试。
-密钥全部走环境变量 / GitHub Secrets，不写入代码。
+- 图片走 GitHub raw 公网链接，内嵌在 Server酱/PushPlus 的 Markdown 正文里，手机长按可存。
+- 任一通道配置即推送；全部失败才标记任务失败。
+- 密钥全部走环境变量 / GitHub Secrets，不写入代码。
 """
 import base64
 import hashlib
@@ -21,10 +22,11 @@ try:
     from zoneinfo import ZoneInfo
     TZ = ZoneInfo("Asia/Shanghai")
 except Exception:
-    # Windows 若缺 tzdata，退回固定 UTC+8（中国无夏令时，等价）
     TZ = timezone(timedelta(hours=8), "UTC+8")
-WECOM_API = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
+
 SERVERCHAN_API = "https://sctapi.ftqq.com/{key}.send"
+PUSHPLUS_API = "http://www.pushplus.plus/send"
+DEFAULT_REPO = "jingxian1931/jiushu-daily-push"
 
 
 def log(msg):
@@ -43,61 +45,23 @@ def pick_today(content, mmdd):
     return None
 
 
-def load_image(asset_name):
-    """读取仓库内的 .b64 图片文本，还原为二进制并返回 base64 + md5。"""
-    path = BASE_DIR / "assets" / asset_name
-    if not path.exists():
-        raise FileNotFoundError("图片资源缺失: {}".format(path))
-    text = path.read_text(encoding="ascii").strip()
-    raw = base64.b64decode(text)
-    return base64.b64encode(raw).decode("ascii"), hashlib.md5(raw).hexdigest()
+def get_image_url(item):
+    """图片公网地址：优先自定义图床，否则用仓库 images/ 目录的 raw 链接。"""
+    base = os.environ.get("IMAGE_URL_BASE", "").strip()
+    if base:
+        return "{}/{}".format(base.rstrip("/"), quote(item["filename"]))
+    repo = os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO).strip() or DEFAULT_REPO
+    return "https://raw.githubusercontent.com/{}/main/images/{}".format(repo, quote(item["filename"]))
 
 
-def wecom_markdown(item):
-    """企业微信 markdown（不支持 ``` 代码块，用引用包裹可复制文本）。"""
-    return "\n".join([
-        "## 日签任务卡 · {} {} · {}".format(item["date"], item["weekday"], item["flow"]),
-        "**用图**：上方图片消息，长按保存到相册",
-        "",
-        "**贴图标题**",
-        "> {}".format(item["title"]),
-        "",
-        "**描述**",
-        "> {}".format(item["description"]),
-        "",
-        "**话题**",
-        "> {}".format(item["topics"]),
-        "",
-        "**朋友圈配文**",
-        "> {}".format(item["moments"]),
-        "",
-        "**6 步操作**",
-        "1. 订阅号助手 → 底部「贴图」",
-        "2. 从相册选今天的封面图",
-        "3. 粘贴标题 + 描述，末尾带上话题",
-        "4. 打开「允许平台推荐」← 最关键",
-        "5. 点「发表」",
-        "6. 右上「…」→「分享到朋友圈」→ 粘贴配文 → 发表",
-        "",
-        "<font color=\"warning\">贴图不能存草稿，每天必须从贴图入口新建</font>",
-    ])
-
-
-def serverchan_desp(item, repo):
-    lines = [
+def task_body(item):
+    """各通道共用的正文（Markdown），文案逐字来自内容包。"""
+    return [
         "## 日签任务卡 · {} {} · {}".format(item["date"], item["weekday"], item["flow"]),
         "",
-    ]
-    img_base = os.environ.get("IMAGE_URL_BASE", "").strip()
-    if img_base:
-        url = "{}/{}".format(img_base.rstrip("/"), quote(item["filename"]))
-        lines += ["![日签封面]({})".format(url), ""]
-    else:
-        lines += ["> 图片见企业微信（原生消息，可长按存相册）", ""]
-
-    lines += [
-        "**用图**（本地路径）",
-        "```\nD:\\工作\\微信公众号运营\\04_视觉素材\\日签封面\\{}\n```".format(item["filename"]),
+        "![日签封面]({})".format(get_image_url(item)),
+        "",
+        "> 上方图片长按保存到相册，今天从相册选它发贴图。",
         "",
         "**贴图标题**",
         "```\n{}\n```".format(item["title"]),
@@ -120,42 +84,67 @@ def serverchan_desp(item, repo):
         "6. 右上「…」→「分享到朋友圈」→ 粘贴配文 → 发表",
         "",
         "**贴图不能存草稿、不从草稿箱发，每天必须从贴图入口新建。**",
-        "",
-        "<sub>repo: {}</sub>".format(repo) if repo else "",
     ]
-    return "\n".join(lines)
 
 
-def send_wecom(webhook, item, img_b64, img_md5):
-    payload_img = {"msgtype": "image", "image": {"base64": img_b64, "md5": img_md5}}
-    r = requests.post(webhook, json=payload_img, timeout=20)
-    r.raise_for_status()
-    result = r.json()
-    if result.get("errcode") != 0:
-        raise RuntimeError("图片消息失败: {}".format(result))
-    log("企业微信图片已送达")
-
-    payload_md = {"msgtype": "markdown", "markdown": {"content": wecom_markdown(item)}}
-    r = requests.post(webhook, json=payload_md, timeout=20)
-    r.raise_for_status()
-    result = r.json()
-    if result.get("errcode") != 0:
-        raise RuntimeError("文字消息失败: {}".format(result))
-    log("企业微信文字已送达")
-
-
-def send_serverchan(key, item, repo):
-    url = SERVERCHAN_API.format(key=key)
+def send_serverchan(key, item):
     payload = {
         "title": "日签 {} · {}".format(item["mmdd"], item["title"]),
-        "desp": serverchan_desp(item, repo),
+        "desp": "\n".join(task_body(item)),
     }
-    r = requests.post(url, data=payload, timeout=20)
+    r = requests.post(SERVERCHAN_API.format(key=key), data=payload, timeout=30)
     r.raise_for_status()
     result = r.json()
     if result.get("code") != 0:
         raise RuntimeError("Server酱返回: {}".format(result))
-    log("Server酱兜底已送达")
+    log("Server酱（微信）已送达")
+
+
+def send_pushplus(token, item):
+    payload = {
+        "token": token,
+        "title": "日签 {} · {}".format(item["mmdd"], item["title"]),
+        "content": "\n".join(task_body(item)),
+        "template": "markdown",
+    }
+    r = requests.post(PUSHPLUS_API, json=payload, timeout=30)
+    r.raise_for_status()
+    result = r.json()
+    if result.get("code") != 200:
+        raise RuntimeError("PushPlus返回: {}".format(result))
+    log("PushPlus（微信）已送达")
+
+
+def send_wecom(webhook, item):
+    """企业微信为可选通道：原生图片消息（可长按存相册）+ 文字。"""
+    path = BASE_DIR / "assets" / item["asset"]
+    if not path.exists():
+        raise FileNotFoundError("图片资源缺失: {}".format(path))
+    raw = base64.b64decode(path.read_text(encoding="ascii").strip())
+    payload_img = {
+        "msgtype": "image",
+        "image": {"base64": base64.b64encode(raw).decode("ascii"),
+                  "md5": hashlib.md5(raw).hexdigest()},
+    }
+    r = requests.post(webhook, json=payload_img, timeout=20)
+    r.raise_for_status()
+    if r.json().get("errcode") != 0:
+        raise RuntimeError("企微图片失败: {}".format(r.json()))
+    log("企业微信图片已送达")
+
+    text = "\n".join([
+        "## 日签任务卡 · {} {} · {}".format(item["date"], item["weekday"], item["flow"]),
+        "> 标题：{}".format(item["title"]),
+        "> 描述：{}".format(item["description"]),
+        "> 话题：{}".format(item["topics"]),
+        "> 配文：{}".format(item["moments"]),
+        "<font color=\"warning\">贴图不能存草稿，每天必须从贴图入口新建</font>",
+    ])
+    r = requests.post(webhook, json={"msgtype": "markdown", "markdown": {"content": text}}, timeout=20)
+    r.raise_for_status()
+    if r.json().get("errcode") != 0:
+        raise RuntimeError("企微文字失败: {}".format(r.json()))
+    log("企业微信文字已送达")
 
 
 def main():
@@ -166,29 +155,33 @@ def main():
         log("{} 无日签排期，静默退出（内容包覆盖 {}）".format(mmdd, content.get("schedule", "")))
         return
 
-    wecom = os.environ.get("WECOM_WEBHOOK", "").strip()
     sckey = os.environ.get("SERVERCHAN_KEY", "").strip()
-    repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
-    if not wecom and not sckey:
-        log("未配置 WECOM_WEBHOOK / SERVERCHAN_KEY，无法推送")
+    pptoken = os.environ.get("PUSHPLUS_TOKEN", "").strip()
+    wecom = os.environ.get("WECOM_WEBHOOK", "").strip()
+    if not (sckey or pptoken or wecom):
+        log("未配置 SERVERCHAN_KEY / PUSHPLUS_TOKEN / WECOM_WEBHOOK，无法推送")
         sys.exit(1)
 
-    img_b64, img_md5 = load_image(item["asset"])
     log("命中 {} · {} · {} · {}".format(mmdd, item["weekday"], item["flow"], item["title"]))
-
     success = 0
-    if wecom:
-        try:
-            send_wecom(wecom, item, img_b64, img_md5)
-            success += 1
-        except Exception as exc:
-            log("企业微信通道失败: {}".format(exc))
     if sckey:
         try:
-            send_serverchan(sckey, item, repo)
+            send_serverchan(sckey, item)
             success += 1
         except Exception as exc:
             log("Server酱通道失败: {}".format(exc))
+    if pptoken:
+        try:
+            send_pushplus(pptoken, item)
+            success += 1
+        except Exception as exc:
+            log("PushPlus通道失败: {}".format(exc))
+    if wecom:
+        try:
+            send_wecom(wecom, item)
+            success += 1
+        except Exception as exc:
+            log("企业微信通道失败: {}".format(exc))
 
     if success == 0:
         log("全部通道失败，任务标记失败")
