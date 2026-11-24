@@ -46,12 +46,12 @@ def pick_today(content, mmdd):
 
 
 def get_image_url(item):
-    """图片公网地址：优先自定义图床，否则用仓库 images/ 目录的 raw 链接。"""
+    """图片公网地址：优先自定义图床，否则用 jsDelivr CDN（国内可达性好）。"""
     base = os.environ.get("IMAGE_URL_BASE", "").strip()
     if base:
         return "{}/{}".format(base.rstrip("/"), quote(item["filename"]))
     repo = os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO).strip() or DEFAULT_REPO
-    return "https://raw.githubusercontent.com/{}/main/images/{}".format(repo, quote(item["filename"]))
+    return "https://cdn.jsdelivr.net/gh/{}@main/images/{}".format(repo, quote(item["filename"]))
 
 
 def task_body(item):
