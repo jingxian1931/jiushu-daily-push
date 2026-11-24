@@ -55,41 +55,36 @@ def get_image_url(item):
 
 
 def task_body(item):
-    """各通道共用的正文（Markdown），文案逐字来自内容包。"""
+    """各通道共用的正文（Markdown）。草稿已写好，提醒审核发表。"""
+    draft = item.get("draft_title") or ("每日签 {}｜{}".format(item["mmdd"], item["title"]))
     return [
-        "## 日签任务卡 · {} {} · {}".format(item["date"], item["weekday"], item["flow"]),
+        "## 今日日签 · 待审核发表",
+        "",
+        "**{} {} · {}**".format(item["date"], item["weekday"], item["flow"]),
         "",
         "![日签封面]({})".format(get_image_url(item)),
         "",
-        "> 上方图片长按保存到相册，今天从相册选它发贴图。",
+        "草稿已在公众号草稿箱写好，封面 / 标题 / 作者 / 摘要 / 正文全部填好，无需再粘贴。你只需审核后发表。",
         "",
-        "**贴图标题**",
-        "```\n{}\n```".format(item["title"]),
-        "",
-        "**描述**",
-        "```\n{}\n```".format(item["description"]),
-        "",
-        "**话题**",
-        "```\n{}\n```".format(item["topics"]),
+        "**草稿箱里找这一篇**",
+        "```\n{}\n```".format(draft),
         "",
         "**朋友圈配文**",
         "```\n{}\n```".format(item["moments"]),
         "",
-        "**6 步操作**",
-        "1. 订阅号助手 → 底部「贴图」",
-        "2. 从相册选今天的封面图",
-        "3. 粘贴标题 + 描述，末尾带上话题",
-        "4. 打开「允许平台推荐」← 最关键",
-        "5. 点「发表」",
-        "6. 右上「…」→「分享到朋友圈」→ 粘贴配文 → 发表",
+        "**审核 4 步**",
+        "1. 手机订阅号助手 → 草稿箱 → 找到上面那篇",
+        "2. 点开检查正文与封面（标题作者已填好，无需改动）",
+        "3. 打开「允许平台推荐」← 最关键，关了几乎没自然流量",
+        "4. 点「发表」→ 右上「…」→「分享到朋友圈」→ 粘贴配文 → 发表",
         "",
-        "**贴图不能存草稿、不从草稿箱发，每天必须从贴图入口新建。**",
+        "**只需审核点发表，不用重新编辑草稿。**",
     ]
 
 
 def send_serverchan(key, item):
     payload = {
-        "title": "日签 {} · {}".format(item["mmdd"], item["title"]),
+        "title": "待审核发表 · 日签 {} · {}".format(item["mmdd"], item["title"]),
         "desp": "\n".join(task_body(item)),
     }
     r = requests.post(SERVERCHAN_API.format(key=key), data=payload, timeout=30)
@@ -103,7 +98,7 @@ def send_serverchan(key, item):
 def send_pushplus(token, item):
     payload = {
         "token": token,
-        "title": "日签 {} · {}".format(item["mmdd"], item["title"]),
+        "title": "待审核发表 · 日签 {} · {}".format(item["mmdd"], item["title"]),
         "content": "\n".join(task_body(item)),
         "template": "markdown",
     }
@@ -133,12 +128,11 @@ def send_wecom(webhook, item):
     log("企业微信图片已送达")
 
     text = "\n".join([
-        "## 日签任务卡 · {} {} · {}".format(item["date"], item["weekday"], item["flow"]),
-        "> 标题：{}".format(item["title"]),
-        "> 描述：{}".format(item["description"]),
-        "> 话题：{}".format(item["topics"]),
+        "## 今日日签 · 待审核发表",
+        "> {} {} · {}".format(item["date"], item["weekday"], item["flow"]),
+        "> 草稿箱找：{}".format(item.get("draft_title", item["title"])),
         "> 配文：{}".format(item["moments"]),
-        "<font color=\"warning\">贴图不能存草稿，每天必须从贴图入口新建</font>",
+        "<font color=\"warning\">草稿已写好，只需审核点发表，不用重新编辑</font>",
     ])
     r = requests.post(webhook, json={"msgtype": "markdown", "markdown": {"content": text}}, timeout=20)
     r.raise_for_status()
