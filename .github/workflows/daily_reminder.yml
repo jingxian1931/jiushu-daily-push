@@ -1,0 +1,42 @@
+name: 日签推送 · 企业微信主 + Server酱兜底
+
+# GitHub Actions 的 cron 使用 UTC：23:25 UTC = 北京时间次日 07:25
+# 公开仓库若 60 天无提交活动，GitHub 会自动暂停定时任务（私有仓库无此限制）
+
+on:
+  schedule:
+    - cron: '25 23 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '测试用日期 MM-DD（留空则取当天）'
+        required: false
+        type: string
+
+concurrency:
+  group: daily-sign-push
+  cancel-in-progress: false
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 拉取仓库
+        uses: actions/checkout@v4
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: pip install --quiet requests
+
+      - name: 执行日签推送
+        env:
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          TARGET_DATE: ${{ inputs.date }}
+          IMAGE_URL_BASE: ${{ secrets.IMAGE_URL_BASE }}
+        run: python scripts/push_daily.py
