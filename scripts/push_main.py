@@ -48,6 +48,12 @@ def get_image_url(item):
     return "https://cdn.jsdelivr.net/gh/{}@main/images/{}".format(repo, quote(item["cover"]))
 
 
+def get_moments_url(item):
+    """朋友圈配图公网地址（封面+配文合成竖图）。"""
+    repo = os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO).strip() or DEFAULT_REPO
+    return "https://cdn.jsdelivr.net/gh/{}@main/images/{}".format(repo, quote(item["moments_image"]))
+
+
 def task_body(item, content):
     return [
         "## 今日主文 · 待发表",
@@ -72,6 +78,14 @@ def task_body(item, content):
         "电脑端在原创设置里叫「快捷转载」，保持关闭＝禁止转载（草稿已关，不用动）。",
         "**原创只能发布前勾，发完补不了。**",
         "**合集名用「的」不用「之」，与证书原名一致。**",
+        "",
+        "---",
+        "**朋友圈配图（长按保存，直接发）**",
+        "",
+        "![朋友圈配图]({})".format(get_moments_url(item)),
+        "",
+        "**朋友圈配文（复制这段）**",
+        "```\n{}\n```".format(item["moments_text"]),
     ]
 
 
